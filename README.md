@@ -12,22 +12,23 @@ An end-to-end **data engineering pipeline** for e-commerce analytics, built with
 - [Quick Start](#quick-start)
 - [Project Structure](#project-structure)
 - [Data Flow](#data-flow)
+- [Data Warehouse Schema](#data-warehouse-schema)
 - [Key Concepts](#key-concepts)
 - [Development](#development)
 
 ---
 
-## 🛠 Tech Stack
+## Tech Stack
 
 | Component | Technology | Version |
 |-----------|-----------|---------|
-| **Containerization** | Docker & Docker Compose | Latest |
-| **Distributed Storage** | Apache Hadoop HDFS | 3.2.1 |
-| **Data Warehouse** | Apache Hive | 2.3.2 |
-| **Processing Engine** | Apache Spark | 3.5.0 |
-| **Job Orchestration** | Jenkins | Latest |
-| **Language** | Python (PySpark) | 3.x |
-| **Metadata Store** | PostgreSQL | 9.6+ |
+| Containerization | Docker & Docker Compose | Latest |
+| Distributed Storage | Apache Hadoop HDFS | 3.2.1 |
+| Data Warehouse | Apache Hive | 2.3.2 |
+| Processing Engine | Apache Spark | 3.5.0 |
+| Job Orchestration | Jenkins | Latest |
+| Language | Python (PySpark) | 3.x |
+| Metadata Store | PostgreSQL | 9.6+ |
 
 ---
 
@@ -183,7 +184,23 @@ Generator → CSV Files (HDFS) → Spark Ingestion Job → countries (Parquet)
 
 ---
 
-## 🔑 Key Concepts & Patterns
+## Data Warehouse Schema
+
+The project implements a classic **Kimball Star Schema** optimized for BI reporting in Hive.
+
+### Schema: ecommerce_dw
+
+| Table Type | Table Name | Description | Key Strategy |
+|:---|:---|:---|:---|
+| Fact | `fact_transactions` | Central transactional metrics (Sales, Quantity). | Partitioned by Year/Month. Links to dimensions via Foreign Keys. |
+| Dimension | `dim_products` | Product details and price history. | SCD Type 2 using Surrogate Key (`product_sk`) to track historical price changes. |
+| Dimension | `dim_countries` | Geo-location data. | SCD Type 0 (Overwrite). Includes `region_code` for regional analytics. |
+| Dimension | `dim_customers` | User profiles. | SCD Type 0. Tracks unique customers based on ID. |
+| Dimension | `dim_datetime` | Static time dimension. | Pre-populated dates for efficient time-series analysis (Weekends, Quarters). |
+
+---
+
+## Key Concepts & Patterns
 
 ### Data Storage
 - **HDFS Path Structure:** `/user/root/ecommerce/{logs,products,countries}/`

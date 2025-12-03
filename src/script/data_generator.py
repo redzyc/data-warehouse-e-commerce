@@ -20,7 +20,7 @@ def get_spark_session():
         .enableHiveSupport() \
         .getOrCreate()  
 
-def fetch_data_from_db():
+def fetch_data_from_db(spark):
     countries = []
     products = []
     try:
@@ -65,7 +65,7 @@ if __name__ == "__main__":
     spark = get_spark_session()
     sc = spark.sparkContext
 
-    valid_products, valid_countries = fetch_master_data(spark)
+    valid_products, valid_countries = fetch_data_from_db(spark)
 
 
     rdd = sc.parallelize([generate_rdd(valid_products, valid_countries) for x in range(100)])

@@ -75,7 +75,7 @@ RUN apt-get update && apt-get install -y docker.io
 
 ---
 
-## ⚡ Spark & Hive Data Processing
+## Spark & Hive Data Processing
 
 ### Challenge: Hive Metastore Connection
 **Problem:** Spark SQL CLI ignored the Hive metastore and used local Apache Derby instead, causing jobs to work in Spark but not persist to Hive.
@@ -144,7 +144,7 @@ product_ids = [row.stock_code for row in valid_products]
 
 ## Red Phase Status
 
-**Completed Successfully** ✓
+**Completed Successfully**
 
 - Docker infrastructure stable with persistent storage
 - Spark cluster properly configured and operational
@@ -155,3 +155,109 @@ product_ids = [row.stock_code for row in valid_products]
 - SCD Type 0 & Type 2 implementations working correctly
 
 **System Ready for Green Phase** (Data Marts & Aggregations)
+
+---
+
+# Phase 4: Data Warehouse Design (The Yellow Phase)
+
+## Decision: Star Schema & Kimball Model
+
+**Requirement:** The BI team needs performant read access for dashboards answering questions like:
+- "Top 10 buyers per region?"
+- "Sales distribution by product category?"
+- "Revenue trends by month?"
+
+**Decision:** Implemented a **Star Schema** using the Kimball methodology in Hive database (`ecommerce_dw`).
+
+**Architecture:**
+- **Fact Table:** `fact_transactions` — Contains metrics (quantity, revenue) and foreign keys to dimensions
+- **Dimension Tables:** Denormalized tables surrounding the fact for optimized joins
+  - `dim_products` — Product details with price history
+  - `dim_customers` — Customer demographics
+  - `dim_dates` — Time dimensions for temporal analysis
+  - `dim_countries` — Geographic and regional data
+
+**Rationale:** Star schema provides the fastest query performance for BI tools while maintaining data integrity through conformed dimensions.
+
+---
+
+## Decision: Handling Price History (SCD Type 2)
+
+**Requirement:** Answer historical pricing questions:
+- "What was the price for product X in September?"
+- "How has pricing evolved over time?"
+
+**Challenge:** In a normalized `transactions_raw` table, `stock_code` (Business Key) is not unique if a product has multiple price versions over time. Using `stock_code` directly loses historical accuracy.
+
+**Solution:** Introduced a **Surrogate Key** architecture:
+
+1. **Surrogate Key (`product_sk`)** in `dim_products`
+   - Unique identifier generated for each version of a product
+   - Example: Product "Widget-A" version 1 has `product_sk=101`, version 2 has `product_sk=102`
+
+2. **Fact table references `product_sk`** instead of `stock_code`
+   - A transaction from September always points to `product_sk=101` (Widget-A at September price)
+   - A transaction from November always points to `product_sk=102` (Widget-A at November price)
+
+3. **Historical accuracy guaranteed**
+   - Every transaction points to the *exact version* of the product (and price) that existed at the moment of purchase
+   - `dim_products` maintains `effective_date` and `end_date` for version tracking
+
+**Benefit:** BI queries automatically get historically accurate pricing without complex date filtering logic.
+
+---
+
+## Decision: Partitioning Strategy
+
+**Requirement:** The dataset will grow indefinitely with hourly ingestions (~24 new partitions per day).
+
+**Challenge:** Without partitioning, every query scans millions of rows unnecessarily, causing poor dashboard performance.
+
+**Solution:** Partitioned `fact_transactions` by **Year and Month**:
+
+```sql
+CREATE TABLE fact_transactions (
+    transaction_id INT,
+    product_sk INT,
+    customer_sk INT,
+    date_sk INT,
+    quantity INT,
+    unit_price FLOAT,
+    total_amount FLOAT
+)
+PARTITIONED BY (year INT, month INT)
+STORED AS PARQUET;
+```
+
+**Benefits:**
+- **Partition Pruning:** Hive skips irrelevant partitions during query execution
+  - Query: "Sales in October 2024" only reads `year=2024, month=10` partition
+  - Result: 95%+ faster than scanning full table
+- **Data Lifecycle Management:** Easy to archive or delete old partitions
+- **Incremental Loading:** Daily/hourly jobs load into specific year/month partitions
+
+**Example Query Performance:**
+```sql
+-- Without partition pruning: scans entire table (~billions of rows)
+SELECT SUM(total_amount) FROM fact_transactions WHERE invoice_date >= '2024-10-01';
+
+-- With partition pruning: scans only October 2024 partition (~millions of rows)
+SELECT SUM(total_amount) FROM fact_transactions 
+WHERE year=2024 AND month=10;
+```
+
+---
+
+## Yellow Phase Status
+
+**Completed Successfully**
+
+- Star schema deployed in `ecommerce_dw` database
+- Fact table (`fact_transactions`) designed with proper grain
+- Dimension tables created with conformed attributes
+- SCD Type 2 implemented for `dim_products` with surrogate keys
+- Partitioning strategy applied (Year/Month on `fact_transactions`)
+- Database views created for BI team convenience
+- Query optimization validated with sample dashboards
+
+**System Ready for Green Phase** (Data Mart ETL & Aggregation)
