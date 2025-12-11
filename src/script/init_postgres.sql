@@ -2,6 +2,7 @@
 DROP TABLE IF EXISTS fact_transactions;
 DROP TABLE IF EXISTS dim_products;
 DROP TABLE IF EXISTS dim_countries;
+DROP TABLE IF EXISTS transactions_error;
 
 CREATE TABLE dim_products (
     product_id VARCHAR(255) PRIMARY KEY,
@@ -29,6 +30,7 @@ CREATE TABLE fact_transactions (
     customer_id VARCHAR(50), 
     quantity INT,
     unit_price FLOAT,
+    currency VARCHAR(3) DEFAULT '$',
     total_amount FLOAT,
     invoice_date TIMESTAMP,
     ingestion_timestamp TIMESTAMP

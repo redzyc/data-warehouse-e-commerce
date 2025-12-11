@@ -152,8 +152,11 @@ data-warehouse-e-commerce/
 | Job | Frequency | Triggers | Output |
 |-----|-----------|----------|--------|
 | **Setup_Infrastructure** | On-demand | Manual trigger via Jenkins | Initialize database & HDFS |
+| **Daily_Data_Pipeline** | Daily | Cron schedule | Generates and ingests countries and products |
 | **Hourly_Data_Pipeline** | Every hour | Cron schedule | Generates and ingests raw logs |
-| **Daily_Data_Pipeline** | Every morning (6 AM) | Cron schedule | Refreshes products & countries |
+| **Hourly_Data_Pipeline** | Every 2 hours | Cron schedule | Generates and ingests raw logs (Increased frequency) |
+| **Maintenance_Recovery** | Daily (7 AM) | Post-Daily Pipeline | Retries failed transactions after master data updates |
+| **System_Backup_Gold** | Daily (2 AM) | Cron schedule | Dumps and archives Postgres Gold database |
 
 ### Data Ingestion Flow
 
@@ -491,6 +494,58 @@ Tableau dashboards connected to the Postgres Gold Layer enable stakeholders to:
 
 ---
 
+## Blue Phase: Production Hardening & BI Evolution
+
+This phase focused on system stability, self-healing capabilities, schema evolution, and open-source BI integration.
+
+### 1. Error Recovery ("The Hospital Pattern")
+
+**Problem:** Orders arriving with `country_id`s not yet present in the master data caused data loss or pipeline failures.
+**Solution:** Implemented a **Split-Stream ETL** with a "Dead Letter Queue" pattern.
+
+
+
+- **Main ETL (`etl_direct_fact.py`):**
+    - Checks incoming `country_id` against `dim_countries`.
+    - **Valid Rows:** Processed normally to `fact_transactions`.
+    - **Invalid Rows:** Redirected to `transactions_error` table (The Hospital) with a "Missing Country ID" flag.
+- **Recovery Job (`recover_missing_countries.py`):**
+    - Runs daily after the Country Master update.
+    - Checks the "Hospital" table against the *new* master data.
+    - **Fixed Rows:** Enriched with pricing/currency and injected into `fact_transactions`.
+    - **Still Broken:** Remain in the hospital for the next day.
+
+### 2. Robust Date Parsing & Schema Evolution
+
+**Date Validation Strategy:**
+To handle inconsistent upstream date formats (e.g., mixing `dd/MM/yyyy` and `yyyy-MM-dd`), the pipeline now uses a **Coalesce Strategy**:
+1.  Attempts to parse `invoice_date` using a list of 4 supported formats.
+2.  If all fail, assigns a **Sentinel Value** (`1900-01-01`) and flags the row as `is_date_error`.
+3.  Ensures the pipeline never crashes due to timestamp format changes.
+
+**Schema Evolution:**
+- **ID Standardization:** All IDs (`invoice`, `stock`, `customer`) are explicitly cast to `STRING` to prevent type mismatches (e.g., "12345" vs "A12345").
+- **Multi-Currency Support:** Added `currency` column (default 'GBP') to the Fact table to support future international expansion.
+
+### 3. Operational Resilience (Backups & Frequency)
+
+- **Backup Strategy:** Automated Shell script dumps the `ecommerce_gold` Postgres database every night at 02:00 AM, compresses it (`.gz`), and enforces a 7-day retention policy (deletes older backups).
+- **Latency Optimization:** Increased main pipeline frequency from **Every 4 Hours** to **Every 2 Hours** to provide fresher data to business stakeholders.
+
+### 4. BI Visualization (Apache Superset)
+
+**Decision:** Replaced Tableau with **Apache Superset** to maintain a fully containerized, open-source stack.
+
+- **Integration:** Superset runs as a Docker service (`superset`), connected to the `ecommerce_gold` Postgres database.
+- **Metadata:** Uses the existing Hive Metastore Postgres instance to store its own configuration (dashboards, users), minimizing resource footprint.
+- **Dashboard:** Implemented "E-Commerce Overview" answering key business questions:
+    - *Sales per Region* (Geo Maps)
+    - *Order Frequency Distribution* (Histograms)
+    - *Cross-Border Shoppers* (SQL Lab Custom Queries)
+
+---
+
+
 ## Project Phases
 
 | Phase | Status | Scope |
@@ -499,7 +554,7 @@ Tableau dashboards connected to the Postgres Gold Layer enable stakeholders to:
 | **Green** | Completed | Gold Layer (Postgres), Transformations & Error Handling |
 | **Yellow** | Completed | Build dimensional data warehouse |
 | **Purple** | Completed | Anomaly detection, alerting, and BI visualization |
-| **Blue** | Planned | Advanced BI dashboards & operational monitoring |
+| **Blue** | Completed | Advanced BI dashboards & operational monitoring |
 
 ---
 
