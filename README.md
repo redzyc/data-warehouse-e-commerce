@@ -105,6 +105,7 @@ docker-compose up -d --build
 | **HDFS NameNode** | [http://localhost:9870](http://localhost:9870) | Storage administration |
 | **ResourceManager** | [http://localhost:8088](http://localhost:8088) | Hadoop YARN resource tracking |
 | **Hue** | [http://localhost:8888](http://localhost:8888) | Hive query editor & database browser |
+| **Superset** | [http://localhost:8089] (http://localhost:8089) | BI Dashboard
 
 ---
 
@@ -435,6 +436,9 @@ docker exec -it hive-server hive -e "SELECT * FROM ecommerce_db.transactions_raw
 
 **Query Data (Easy UI):**
 - Hue: [http://localhost:8888](http://localhost:8888) → New Query
+
+**BI Dashboard:**
+- Superset [http://localhost:8089] (http://localhost:8089) 
 
 ### Troubleshooting
 
