@@ -61,11 +61,16 @@ def ingest_product():
             on="stock_code", 
             how="left"
         )
+        df_final = df_final.withColumn(
+            "product_id",
+            concat_ws("-", col("stock_code"), col("price_date_new"))
+        )
 
         df_final = df_final.filter(
             (col("unit_price_latest").isNull()) | 
             (col("unit_price_new") != col("unit_price_latest"))
         ).select(
+            col("product_id"),
             col("stock_code"), 
             col("description"), 
             col("unit_price_new").alias("unit_price"), 

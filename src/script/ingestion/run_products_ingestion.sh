@@ -1,7 +1,7 @@
 #!/bin/bash
 
 JOB_NAME="Daily Ingest Product"
-PYTHON_SCRIPT="/opt/spark/jobs/ingest_products.py" 
+PYTHON_SCRIPT="/opt/spark/jobs/products/ingest_products.py" 
 SPARK_MASTER="spark://spark-master:7077"
 LOG_FILE="/opt/spark/logs/products_$(date +%Y%m%d%H%M%S).log"
 mkdir -p $(dirname $LOG_FILE)

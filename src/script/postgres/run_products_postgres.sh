@@ -1,18 +1,23 @@
 #!/bin/bash
 
-JOB_NAME="Daily Ingest Country"
-PYTHON_SCRIPT="/opt/spark/jobs/countries/ingest_countries.py" 
+JOB_NAME="Daily Product Postgres"
+PYTHON_SCRIPT="/opt/spark/jobs/products/postgres_products.py" 
 SPARK_MASTER="spark://spark-master:7077"
-LOG_FILE="/opt/spark/logs/countries_$(date +%Y%m%d%H%M%S).log"
+LOG_FILE="/opt/spark/logs/postgres/products_$(date +%Y%m%d%H%M%S).log"
+JDBC_DRIVER_PATH="/opt/spark/jars-custom/postgresql-42.7.8.jar"
+
 
 mkdir -p $(dirname $LOG_FILE)
 
 START_TIME=$(date +%s)
 
-/opt/spark/bin/spark-submit \
+ /opt/spark/bin/spark-submit \
     --master $SPARK_MASTER \
     --conf spark.driver.host=spark-master \
     --deploy-mode client \
+    --jars $JDBC_DRIVER_PATH \
+    --conf spark.driver.extraClassPath=$JDBC_DRIVER_PATH \
+    --conf spark.executor.extraClassPath=$JDBC_DRIVER_PATH \
     $PYTHON_SCRIPT 2>&1 | tee $LOG_FILE
 
 EXIT_CODE=$?

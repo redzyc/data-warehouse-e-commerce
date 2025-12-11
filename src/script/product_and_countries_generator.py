@@ -8,7 +8,13 @@ HDFS_OUTPUT_PATH = f"{HDFS_NAMENODE_URI}/user/root/ecommerce/"
 
 #CountryID, Country
 COUNTRY_CATALOG = [
-    ("11", "Norway"),          
+    ("11", "Germany"),
+    ("11", "France"),
+    ("11", "Italy"),
+    ("13", "Turkey"), 
+    ("50", "USA"),   
+    ("44", "Australia"),
+    ("33", "China")       
 ]
 #Stock Code, Product Description, Unit Price, Date
 PRODUCT_CATALOG = [
@@ -39,9 +45,11 @@ def generate_country():
     #CountryID, Country
     data_lines = []
     for i, (continent_code, country_name) in enumerate(COUNTRY_CATALOG, start=1):
-        suffix = f"{i:02d}"
-        country_id = f"{continent_code}{suffix}"
-        data_lines.append(f"{country_id},{country_name}")
+        country_suffix = f"{i:02d}"
+        base_country_id = f"{continent_code}{country_suffix}"
+        for region_number in range(1, 7):
+            country_id = f"{base_country_id}-{region_number}"
+            data_lines.append(f"{country_id},{country_name}")
     return data_lines
 
 

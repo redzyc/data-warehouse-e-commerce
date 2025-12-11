@@ -2,7 +2,7 @@
 
 An end-to-end **data engineering pipeline** for e-commerce analytics, built with **Docker**, **Apache Spark**, **Hive**, and **Jenkins** for automated orchestration.
 
-**Status:** Red Phase Completed (Infrastructure & Data Ingestion Layer)
+**Status:** Red, Green & Yellow Phases Completed (Infrastructure, Ingestion & Gold Layer)
 
 ---
 
@@ -139,7 +139,6 @@ data-warehouse-e-commerce/
 │       └── ingestion/                 # Ingestion utilities
 │
 ├── data/                              # Local data staging (CSV before HDFS)
-├── DIARY.md                           # Engineering decisions & troubleshooting log
 ├── README.md                          # This file
 └── LICENSE
 ```
@@ -196,7 +195,181 @@ The project implements a classic **Kimball Star Schema** optimized for BI report
 | Dimension | `dim_products` | Product details and price history. | SCD Type 2 using Surrogate Key (`product_sk`) to track historical price changes. |
 | Dimension | `dim_countries` | Geo-location data. | SCD Type 0 (Overwrite). Includes `region_code` for regional analytics. |
 | Dimension | `dim_customers` | User profiles. | SCD Type 0. Tracks unique customers based on ID. |
-| Dimension | `dim_datetime` | Static time dimension. | Pre-populated dates for efficient time-series analysis (Weekends, Quarters). |
+
+Note: The static time dimension table `dim_datetime` has been removed from the persistent Hive schema. Time attributes (year, quarter, month, day, day_of_week, is_weekend, etc.) are computed on-the-fly during Spark transformations and are persisted in the Gold/Postgres layer as needed.
+
+---
+
+## Data Warehouse Schema (Gold Layer)
+
+The project implements a Star Schema in PostgreSQL (database: `ecommerce_gold`). The Gold layer holds the production-ready, denormalized schema optimized for BI consumption and reporting.
+
+Schema: `ecommerce_gold`
+
+| Table Type | Table Name | Description | Key Strategy |
+|:---|:---|:---|:---|
+| Fact | `fact_transactions` | Central transactional metrics and measures. | Partition by date at ETL level; use primary key (hashed) and upserts to ensure idempotency. |
+| Dimension | `dim_products` | Product master with price history. | Up-to-date attributes; include `effective_start_date` for history. |
+| Dimension | `dim_countries` | Geographic master. | Overwrite-on-update (Type 0); include `region_code` for regional analytics. |
+| Dimension | `dim_customers` | Customer master. | Overwrite-on-update (Type 0); de-duplicated by customer identifier. |
+
+Example table definitions (concise):
+
+Fact table `fact_transactions` (recommended columns):
+
+```
+transaction_id TEXT PRIMARY KEY, -- generated hash of key fields
+invoice_no TEXT,
+product_id TEXT,
+country_id TEXT,
+quantity INT,
+unit_price NUMERIC(10,2),
+total_amount NUMERIC(12,2),
+invoice_date TIMESTAMP,
+ingestion_timestamp TIMESTAMP
+```
+
+Dimension `dim_products` (recommended columns):
+
+```
+product_id TEXT PRIMARY KEY,
+stock_code TEXT,
+description TEXT,
+unit_price NUMERIC(10,2),
+effective_start_date TIMESTAMP
+```
+
+Dimension `dim_countries` (recommended columns):
+
+```
+country_id TEXT PRIMARY KEY,
+country_name TEXT,
+region_code TEXT,
+continent TEXT
+```
+
+Error handling table:
+
+`transactions_error` — stores rows that fail business validation (missing FK, malformed payload) with columns such as `error_id`, `payload JSON`, `error_message`, `source_file`, `attempts`, and `ingestion_timestamp`. This table enables retry and manual investigation workflows.
+
+Key Concepts & Patterns for Gold Layer
+
+---
+
+## Green Phase: Architecture Evolution (Direct Bronze-to-Gold Loading)
+
+Decision: Skipping Persistent Silver Layer
+
+Context: The initial plan included a persisted Silver layer in Hive between Bronze and Gold.
+
+Decision: We adopted a Direct Load architecture: Extract from Hive Bronze -> Transform in Spark memory -> Load to Postgres Gold.
+
+Rationale:
+- Simplification: For the observed data volume, an intermediate persistent Hive Silver layer added storage overhead and latency without measurable benefit.
+- Speed: Direct loading updates the BI Postgres database immediately after transformation, reducing end-to-end latency for dashboards.
+- Efficiency: Spark performs complex "as-of" joins and deduplication in memory, avoiding unnecessary HDFS writes.
+
+Spark & Postgres Integration
+
+Challenge: `ClassNotFoundException: org.postgresql.Driver`
+
+Problem: Spark jobs initially failed to load the PostgreSQL JDBC driver when it was configured inside Python.
+
+Root Cause: The JVM classpath is established when `spark-submit` launches; setting `spark.jars` from within Python is too late for the driver to be available to the JVM.
+
+Solution: Move JDBC driver configuration into the shell wrapper that launches `spark-submit` so the driver is available to the JVM at startup. Example wrapper:
+
+```bash
+/opt/spark/bin/spark-submit \
+   --jars /opt/spark/jars-custom/postgresql-42.7.8.jar \
+   --conf spark.driver.extraClassPath=/opt/spark/jars-custom/postgresql-42.7.8.jar \
+   --conf spark.executor.extraClassPath=/opt/spark/jars-custom/postgresql-42.7.8.jar \
+   /opt/spark/jobs/postgres_load_fact.py
+```
+
+Postgres Drops Blocked by Active Sessions
+
+Problem: The setup pipeline could not `DROP DATABASE ecommerce_gold` because active client sessions existed.
+
+Solution: Terminate active sessions before drop using `pg_terminate_backend`, then DROP/CREATE as the superuser:
+
+```sql
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname = 'ecommerce_gold' AND pid <> pg_backend_pid();
+-- then DROP DATABASE ecommerce_gold; CREATE DATABASE ecommerce_gold;
+```
+
+Complex Transformation Logic
+
+Historical Price Matching (As-Of Join)
+- Problem: Transactions do not carry unit_price; prices change over time and must be matched to the price in effect at invoice_date.
+- Solution: Use a windowed approach:
+   - Join transactions to product price history on `stock_code`.
+   - Filter where `price_date <= invoice_date`.
+   - Compute `row_number() OVER (PARTITION BY transaction_id ORDER BY price_date DESC)` and keep `rn = 1`.
+
+Product Deduplication / Latest Snapshot
+- Build a latest snapshot for `dim_products` using a window partitioned by `stock_code` ordered by `price_date DESC`, filter `rn = 1`, then write to Postgres using overwrite or upsert.
+
+Hive Self-Read/Write Deadlock
+- Problem: Overwriting a Hive table while reading from it in the same job triggered `[UNSUPPORTED_OVERWRITE]`.
+- Solution: Use a temporary view to isolate the read set and perform an atomic table swap (create/replace) or write to a temp table then rename.
+
+Data Quality & Error Handling
+
+Missing Reference Data (Foreign Keys)
+- Implement a Split-Stream pattern:
+   - Left-join transactions with `dim_countries`.
+   - Valid rows are written to `fact_transactions` in Postgres.
+   - Invalid rows (null country_id) are written to `transactions_error` in Postgres for review and retry.
+
+Green Phase Status
+
+Completed Successfully
+
+- Gold Layer established (`ecommerce_gold` database in Postgres)
+- Robust ETL: Python transformation logic separated from shell-level infrastructure config
+- Transformation Logic: As-of joins and deduplication implemented in Spark
+- Data Quality: Invalid rows captured in `transactions_error` rather than discarded
+- Automation: Jenkins jobs updated to run Direct-to-Gold pipelines
+
+System Ready for Purple Phase (Anomaly Detection & Alerting)
+
+---
+
+1. Direct Load Architecture (ELT)
+- Extract from Hive (Bronze) → Transform in Spark memory → Load to Postgres (Gold). This reduces latency between ingestion and BI availability and simplifies the pipeline by avoiding an intermediate persisted Silver layer.
+
+2. JDBC Driver Management
+- Spark jobs include the PostgreSQL JDBC driver dynamically (via `--jars` and classpath entries) in the shell wrapper scripts under `/opt/spark/scripts/postgres/` so jobs can connect to Postgres during execution.
+
+3. Idempotency and Upserts
+- Gold jobs are idempotent. For the fact table we recommend using `INSERT ... ON CONFLICT (transaction_id) DO UPDATE ...` (Postgres upsert semantics) or load-to-staging then swap. Dimension loads can use `TRUNCATE`/`OVERWRITE` or `MERGE` depending on size and SLA.
+
+Development: Running Gold ETL Manually
+
+Run the Fact ETL and load to Postgres from the Spark master container:
+
+```bash
+docker exec -it spark-master /opt/spark/scripts/postgres/run_fact_postgres.sh
+```
+
+Check data in Postgres (example using `psql` inside the Postgres container or via your SQL client):
+
+```bash
+# using psql inside container (replace user/db as appropriate)
+docker exec -it postgres psql -U postgres -d ecommerce_gold -c "SELECT * FROM fact_transactions LIMIT 10;"
+
+# check error table
+docker exec -it postgres psql -U postgres -d ecommerce_gold -c "SELECT * FROM transactions_error LIMIT 10;"
+```
+
+Notes
+- Ensure the Postgres credentials and network are configured in the Spark job wrapper scripts and Jenkins job environment variables.
+- Monitor JDBC batch sizes and commit frequency to control memory and transaction overhead.
+
+---
 
 ---
 
@@ -262,10 +435,59 @@ docker exec -it hive-server hive -e "SELECT * FROM ecommerce_db.transactions_raw
 
 ### Troubleshooting
 
-See **DIARY.md** for detailed engineering decisions and known issues:
-- Hive metastore persistence on Docker restart
-- Spark hanging with "Initial job has not accepted resources"
-- Container timezone & DNS resolution
+---
+
+## Purple Phase: Anomaly Detection & Alerting
+
+This phase implements a statistical monitoring system to detect anomalous orders (potential fraud or data errors) in the Gold Layer using historical sales patterns.
+
+### Statistical Anomaly Detection
+
+The system applies **Z-Score analysis** to identify orders that deviate significantly from normal patterns:
+
+1. **Baseline Computation (per product)**
+   - **Median Quantity:** Calculated via `percentile_approx(0.5)` on historical order quantities per `stock_code`
+   - **Standard Deviation:** Measured across all quantities for each product
+
+2. **Anomaly Trigger**
+   - An order is flagged if: `Order_Quantity > Median + (2 × Std_Deviation)`
+   - This threshold captures orders in the top ~2.3% of the distribution (assuming normality)
+
+### Implementation Architecture
+
+| Component | Technology | Purpose |
+|-----------|-----------|----------|
+| Detection Engine | PySpark job (`detect_anomalies.py`) | Computes Z-scores and writes flagged orders to Postgres |
+| Scheduling | Jenkins | Runs immediately post-Gold ETL |
+| Alerting | Python `smtplib` via Gmail SMTP | Sends HTML-formatted email notifications |
+| Credential Management | `.env` file (local, not committed) | Secures SMTP credentials outside Git |
+| BI Visualization | Tableau | Connects to Postgres Gold Layer for dashboards |
+
+### Alert Output
+
+Flagged anomalies are persisted to a dedicated Postgres table (`anomalies`) with:
+- `order_id` — Unique transaction identifier
+- `stock_code` — Product code
+- `quantity` — Order quantity that triggered alert
+- `median_qty` — Product's baseline median
+- `std_deviation` — Product's standard deviation
+- `z_score` — Calculated Z-score (magnitude of deviation)
+- `alert_timestamp` — Detection time
+- `status` — Investigation state (NEW, REVIEWED, RESOLVED)
+
+### BI Dashboards
+
+Tableau dashboards connected to the Postgres Gold Layer enable stakeholders to:
+- **Revenue by Geography:** Visualize total sales and count by country
+- **Top 20 Products:** Bar chart of best-selling items by quantity and revenue
+- **Anomaly Trend Analysis:** Time-series scatter plot showing flagged orders and statistical thresholds over time
+- **Anomaly Drill-Down:** Filter by product, date range, or Z-score threshold for root-cause analysis
+
+### Data Quality & Feedback Loop
+
+- **False Positives:** Legitimate bulk orders can be marked RESOLVED to update baseline thresholds
+- **True Anomalies:** Investigated orders provide feedback for fraud prevention or data quality improvements
+- **Baseline Refresh:** Periodically recompute median and standard deviation to adapt to seasonal trends
 
 ---
 
@@ -273,17 +495,16 @@ See **DIARY.md** for detailed engineering decisions and known issues:
 
 | Phase | Status | Scope |
 |-------|--------|-------|
-| **Red** | Completed | Infrastructure setup & data ingestion |
-| **Green** | Next | Create data marts (aggregations) |
-| **Yellow** | Planned | Build dimensional data warehouse |
-| **Purple** | Planned | Implement alerting & SLA monitoring |
-| **Blue** | Planned | BI dashboard & finalization |
+| **Red** | Completed | Infrastructure setup & Bronze ingestion (Hive) |
+| **Green** | Completed | Gold Layer (Postgres), Transformations & Error Handling |
+| **Yellow** | Completed | Build dimensional data warehouse |
+| **Purple** | Completed | Anomaly detection, alerting, and BI visualization |
+| **Blue** | Planned | Advanced BI dashboards & operational monitoring |
 
 ---
 
 ## Additional Resources
 
-- **Engineering Log:** See `DIARY.md` for detailed problem-solving notes and design decisions
 - **Spark Documentation:** [Apache Spark 3.5.0](https://spark.apache.org/docs/3.5.0/)
 - **Hive Documentation:** [Apache Hive 2.3.2](https://cwiki.apache.org/confluence/display/Hive)
 - **Docker Reference:** [Docker Compose](https://docs.docker.com/compose/)

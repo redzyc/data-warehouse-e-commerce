@@ -56,9 +56,7 @@ def generate_rdd(valid_products, valid_countries):
     random_date = datetime.now() - timedelta(minutes=random.randint(0, 240))
     invoice_date = random_date.strftime("%Y-%m-%d %H:%M:%S")
     customer_id = random.randint(10000,99999)
-    region_id = random.randint(1,6)
-    country = f"{country_id}-{region_id}"
-    return f"{invoice_no},{stock_code},{quantity},{invoice_date},{customer_id},{country}"
+    return f"{invoice_no},{stock_code},{quantity},{invoice_date},{customer_id},{country_id}"
     
 
 if __name__ == "__main__":

@@ -41,47 +41,27 @@ def ingest_countries():
         df_raw = spark.read.text(HDFS_INPUT_PATH)
         
         if df_raw.rdd.isEmpty():
-            spark.stop()
+            print("Nema novih fajlova. Zavrsavam.")
             return
+
         #2 Transform
-        df_new_parsed = df_raw.withColumn(
+        df_parsed = df_raw.withColumn(
             "temp_cols", split(trim(col("value")), ",")
         ).select(
-            trim(col("temp_cols").getItem(1)).alias("country_name"), 
-            substring(trim(col("temp_cols").getItem(0)), 1, 2).alias("continent_prefix")
+            trim(col("temp_cols").getItem(0)).alias("country_key_raw"), 
+            trim(col("temp_cols").getItem(1)).alias("country_name")
         )
-
-
-        df_existing = spark.table(HIVE_TARGET_TABLE).select(
+        df_final = df_parsed.select(
+            (col("country_key_raw")).alias("country_id"),
             col("country_name"),
-            substring(col("country_id"), 1, 2).alias("continent_prefix")
-        )
-
-
-        df_combined = df_existing.union(df_new_parsed).dropDuplicates(["country_name"])
-
-
-        window_spec = Window.partitionBy("continent_prefix").orderBy("country_name")
-
-
-        df_final = df_combined.withColumn(
-            "row_num", row_number().over(window_spec)
+            substring(col("country_key_raw"), 6, 2).cast("int").alias("region_id") 
         ).withColumn(
-            "country_id", 
-            concat(col("continent_prefix"), lpad(col("row_num"), 2, "0"))
-        )
-
-        df_final = df_final.withColumn(
             "continent", continent_fun(col("country_id"))
-        ).select("country_id", "country_name", "continent")
-
-        df_final.sort("country_id").show(20, False)
-
-        rows = df_final.collect() 
-        df_safe_to_write = spark.createDataFrame(rows, df_final.schema)
+        )
+        df_final.show()
 
         #3 Load
-        df_safe_to_write.write \
+        df_final.write \
             .mode("overwrite") \
             .insertInto(HIVE_TARGET_TABLE)
         

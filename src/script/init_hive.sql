@@ -9,7 +9,6 @@ CREATE TABLE IF NOT EXISTS transactions_raw (
     invoice_date TIMESTAMP,
     customer_id STRING,
     country_id STRING,
-    region_id INT ,
     ingestion_timestamp TIMESTAMP
 )
 STORED AS PARQUET;
@@ -17,11 +16,13 @@ STORED AS PARQUET;
 CREATE TABLE IF NOT EXISTS countries (
     country_id STRING,
     country_name STRING,
+    region_name STRING,
     continent STRING
 )
 STORED AS PARQUET;
 
 CREATE TABLE IF NOT EXISTS products (
+    product_id STRING,
     stock_code STRING,
     description STRING,
     unit_price FLOAT,
