@@ -1,4 +1,5 @@
 services:
+#1 Hadoop Storage & Resource Mgmt  
   namenode:
     image: bde2020/hadoop-namenode:2.0.0-hadoop3.2.1-java8
     container_name: namenode
@@ -14,6 +15,18 @@ services:
       - ./hadoop.env
     networks:
       - hadoopnet
+
+  datanode1:
+    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
+    container_name: datanode1
+    volumes:
+      - hadoop_datanode1:/hadoop/dfs/data
+    environment:
+      SERVICE_PRECONDITION: "namenode:9870"
+    env_file:
+      - ./hadoop.env
+    networks:
+      - hadoopnet  
   resourcemanager:
     image: bde2020/hadoop-resourcemanager:2.0.0-hadoop3.2.1-java8
     container_name: resourcemanager
@@ -23,7 +36,7 @@ services:
     env_file:
       - ./hadoop.env
     ports:
-      - "8088:8088"
+      - "8089:8088"
     networks:
       - hadoopnet
 
@@ -40,18 +53,8 @@ services:
     networks:
       - hadoopnet
 
-  datanode1:
-    image: bde2020/hadoop-datanode:2.0.0-hadoop3.2.1-java8
-    container_name: datanode1
-    volumes:
-      - hadoop_datanode1:/hadoop/dfs/data
-    environment:
-      SERVICE_PRECONDITION: "namenode:9870"
-    env_file:
-      - ./hadoop.env
-    networks:
-      - hadoopnet
-
+  
+#2 Hive Metastore & Server
   hive-server:
     image: bde2020/hive:2.3.2-postgresql-metastore
     container_name: hive-server
@@ -88,6 +91,7 @@ services:
     ports:
       - "5432:5432"
 
+# 3. Processing
   spark-master:
     image: apache/spark:3.5.0-python3
     container_name: spark-master
@@ -147,20 +151,7 @@ services:
     command: /opt/spark/bin/spark-class org.apache.spark.deploy.worker.Worker spark://spark-master:7077
     networks:
       - hadoopnet
-
-  hue:
-    image: gethue/hue:20201001-135001
-    container_name: hue
-    hostname: hue
-    ports:
-      - "8888:8888"
-    volumes:
-      - ./conf.dist:/usr/share/hue/desktop/conf
-    depends_on:
-      - namenode
-    networks:
-      - hadoopnet
-
+#4. Orchestration
   jenkins:
     build: 
       context: .
@@ -176,6 +167,19 @@ services:
       - ../src/script:/opt/scripts
     networks:
       - hadoopnet
+#5. Visualization and Hue
+  hue:
+    image: gethue/hue:20201001-135001
+    container_name: hue
+    hostname: hue
+    ports:
+      - "8888:8888"
+    volumes:
+      - ./conf.dist:/usr/share/hue/desktop/conf
+    depends_on:
+      - namenode
+    networks:
+      - hadoopnet    
   superset:
     image: apache/superset:4.0.2
     container_name: superset
@@ -203,7 +207,7 @@ services:
     networks:
       - hadoopnet
 
-
+# Networks and volumes
 networks:
   hadoopnet:
     driver: bridge

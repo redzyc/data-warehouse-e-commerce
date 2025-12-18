@@ -25,7 +25,6 @@ def create_spark_session():
 
 def send_alert_email(anomalies_data):
     if not anomalies_data:
-        print("No anomalies to report.")
         return
         
     subject = "Alarm: Anomalies in orders Detected"
@@ -72,7 +71,6 @@ def send_alert_email(anomalies_data):
 
 def detect_anomalies():
     spark = create_spark_session()
-    print("Analyzing data for anomalies...")
 
     try:
         df = spark.table("ecommerce_db.transactions_raw")

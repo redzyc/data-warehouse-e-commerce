@@ -59,7 +59,7 @@ def generate_product():
     today_str = (datetime.now()).strftime("%Y-%m-%d")
     for stock_code, description, unit_price in PRODUCT_CATALOG:
         random_change_price= random.uniform(-0.3, 0.3)
-        unit_price = round(unit_price + random_change_price, 2)
+        unit_price = round(unit_price *(1+ random_change_price), 2)
         data_lines.append(f"{stock_code},{description},{unit_price},{today_str}")
     return data_lines
 

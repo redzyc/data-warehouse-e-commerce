@@ -41,7 +41,7 @@ def ingest_countries():
         df_raw = spark.read.text(HDFS_INPUT_PATH)
         
         if df_raw.rdd.isEmpty():
-            print("Nema novih fajlova. Zavrsavam.")
+            spark.stop()
             return
 
         #2 Transform
@@ -58,7 +58,6 @@ def ingest_countries():
         ).withColumn(
             "continent", continent_fun(col("country_id"))
         )
-        df_final.show()
 
         #3 Load
         df_final.write \

@@ -7,7 +7,7 @@ from datetime import timedelta
 HDFS_NAMENODE_URI = "hdfs://namenode:9000"
 HDFS_OUTPUT_PATH = f"{HDFS_NAMENODE_URI}/user/root/ecommerce/logs/"
 EXISTING_PRODUCT_CODES=["10001","10002","10003","10004","10005","10006","10007","10008","10009","10010"]
-EXISITING_COUNTRY_IDS=["1101","1102","1001","1002","5001","1301","1302","3301","4401","6601"]
+EXISITING_COUNTRY_IDS=["1101-1","1102-1","1001-1","1002-1","5001-1","1301-1","1302-1","3301-1","4401-1","6601-1"]
 HIVE_DB = "ecommerce_db"
 
 def get_spark_session():
