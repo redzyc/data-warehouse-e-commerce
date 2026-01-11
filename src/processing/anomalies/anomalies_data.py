@@ -1,3 +1,6 @@
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
+import smtplib
 from common_imports import *
 
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
@@ -57,7 +60,7 @@ def send_alert_email(anomalies_data):
     
 
 def detect_anomalies():
-    spark = create_spark_session()
+    spark = create_spark_session_postgres()
 
     try:
         df = spark.table("ecommerce_db.transactions_raw")

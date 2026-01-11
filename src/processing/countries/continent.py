@@ -1,4 +1,5 @@
-from src.common_imports import *
+from common_imports import *
+
 def continent_fun(id):
     continent = substring(id,1,2)
     return when(continent == "11", lit("Europe")) \
