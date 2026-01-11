@@ -17,7 +17,6 @@ CREATE TABLE dim_products (
 CREATE TABLE dim_countries (
     country_id VARCHAR(10) PRIMARY KEY,
     country_name VARCHAR(100),
-    region_code VARCHAR(50),
     continent VARCHAR(50)
 );
 
@@ -26,7 +25,8 @@ CREATE TABLE fact_transactions (
     transaction_id TEXT,
     invoice_no VARCHAR(50),
     product_id VARCHAR(255),
-    country_id VARCHAR(10),  
+    country_id VARCHAR(10),
+    region_code VARCHAR(50),  
     customer_id VARCHAR(50), 
     quantity INT,
     unit_price FLOAT,
@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS transactions_error (
     invoice_no VARCHAR(50),
     stock_code VARCHAR(50),
     customer_id VARCHAR(50),
+    region_code VARCHAR(50),
     quantity INT,
     invoice_date TIMESTAMP,
     country_id VARCHAR(10),

@@ -1,22 +1,14 @@
-import sys
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import *
+from common_imports import *
+from write_to_db import write_to_postgres
 
-PG_URL = "jdbc:postgresql://hive-metastore-postgresql:5432/ecommerce_gold"
+# PostgreSQL credentials from environment variables
+PG_URL = os.getenv("PG_URL")
 PG_PROPERTIES = {
-    "user": "hive", 
-    "password": "hive", 
-    "driver": "org.postgresql.Driver"
+    "user": os.getenv("PG_USER"), 
+    "password": os.getenv("PG_PASSWORD"), 
+    "driver": os.getenv("PG_DRIVER", "org.postgresql.Driver")
 }
 
-
-def create_spark_session():
-    return SparkSession.builder \
-        .appName("Postgres_Products") \
-        .config("hive.metastore.uris", "thrift://hive-metastore:9083") \
-        .config("spark.driver.host", "spark-master") \
-        .enableHiveSupport() \
-        .getOrCreate()
 
 
 def process_countries(spark):
@@ -29,16 +21,11 @@ def process_countries(spark):
             col("unit_price"), 
             col("price_date")
             )
-        df_final.write \
-        .jdbc( \
-            url=PG_URL, \
-            table="dim_products", \
-            mode="overwrite", \
-            properties=PG_PROPERTIES)
+        write_to_postgres(df_final, "dim_products", PG_URL, PG_PROPERTIES, mode="overwrite")
 
 
 if __name__ == "__main__":
-      spark = create_spark_session()
+      spark = create_spark_session_postgres()
       process_countries(spark)
       spark.stop()
 

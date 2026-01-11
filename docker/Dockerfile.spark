@@ -1,0 +1,14 @@
+FROM apache/spark:3.5.0-python3
+
+USER root
+
+# Install Python dependencies
+RUN pip install --no-cache-dir \
+    python-dotenv \
+    psycopg2-binary \
+    pyspark==3.5.0
+
+# Download PostgreSQL JDBC driver directly
+RUN wget -q https://jdbc.postgresql.org/download/postgresql-42.7.8.jar -O /opt/spark/jars/postgresql-42.7.8.jar
+
+USER spark

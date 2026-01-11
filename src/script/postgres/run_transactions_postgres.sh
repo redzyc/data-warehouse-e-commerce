@@ -1,7 +1,7 @@
 #!/bin/bash
 
 JOB_NAME="4-Hourly Transaction in Postgres"
-PYTHON_SCRIPT="/opt/spark/jobs/logs/etl_postgres.py"
+PYTHON_SCRIPT="/opt/spark/jobs/transactions/etl_postgres.py"
 SPARK_MASTER="spark://spark-master:7077"
 LOG_FILE="/opt/spark/logs/postgres/transactions_$(date +%Y%m%d%H%M%S).log"
 JDBC_DRIVER_PATH="/opt/spark/jars-custom/postgresql-42.7.8.jar"

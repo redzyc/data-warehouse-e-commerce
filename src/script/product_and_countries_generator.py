@@ -1,7 +1,4 @@
-import os
-import random
-from datetime import datetime, timedelta
-from pyspark.sql import SparkSession
+from common_imports import *
 
 HDFS_NAMENODE_URI = "hdfs://namenode:9000"
 HDFS_OUTPUT_PATH = f"{HDFS_NAMENODE_URI}/user/root/ecommerce/"
@@ -10,8 +7,14 @@ HDFS_OUTPUT_PATH = f"{HDFS_NAMENODE_URI}/user/root/ecommerce/"
 COUNTRY_CATALOG = [
     ("11", "Germany"),
     ("11", "France"),
+    ("11", "Spain"),
     ("11", "Italy"),
     ("13", "Turkey"), 
+    ("22", "Nigeria"),
+    ("22", "South Africa"),
+    ("33", "India"),
+    ("33", "Japan"),
+    ("55", "Canada"),
     ("50", "USA"),   
     ("44", "Australia"),
     ("33", "China")       
@@ -30,26 +33,13 @@ PRODUCT_CATALOG = [
     ("10010", "Mouse", 49.99),
 ]
 
-def get_spark_session():
-
-    return SparkSession.builder \
-        .appName("ProductAndCountriesGenerator") \
-        .config("hive.metastore.uris", "thrift://hive-metastore:9083") \
-        .config("spark.sql.warehouse.dir", "hdfs://namenode:9000/user/hive/warehouse") \
-        .config("spark.hadoop.fs.defaultFS", "hdfs://namenode:9000") \
-        .config("spark.hadoop.dfs.client.use.datanode.hostname", "true") \
-        .enableHiveSupport() \
-        .getOrCreate()   
-
 def generate_country():
     #CountryID, Country
     data_lines = []
     for i, (continent_code, country_name) in enumerate(COUNTRY_CATALOG, start=1):
         country_suffix = f"{i:02d}"
-        base_country_id = f"{continent_code}{country_suffix}"
-        for region_number in range(1, 7):
-            country_id = f"{base_country_id}-{region_number}"
-            data_lines.append(f"{country_id},{country_name}")
+        country_id = f"{continent_code}{country_suffix}"
+        data_lines.append(f"{country_id},{country_name}")
     return data_lines
 
 
@@ -63,36 +53,35 @@ def generate_product():
         data_lines.append(f"{stock_code},{description},{unit_price},{today_str}")
     return data_lines
 
+
+def save_to_hdfs(data, folder_name, filename_prefix, spark, timestamp):
+        sc = spark.sparkContext
+        rdd = sc.parallelize(data)
+        output_path = os.path.join(HDFS_OUTPUT_PATH, folder_name, f"{filename_prefix}_{timestamp}")
+        
+        hadoop = spark._jvm.org.apache.hadoop
+        fs = hadoop.fs.FileSystem.get(spark._jsc.hadoopConfiguration())
+        hdfs_path = hadoop.fs.Path(output_path)
+        
+        if fs.exists(hdfs_path):
+            fs.delete(hdfs_path, True)
+        
+        rdd.coalesce(1).saveAsTextFile(output_path)
+        
 if __name__ == "__main__":
 
 
-    spark = get_spark_session()
+    spark = create_spark_session_hive()
     sc = spark.sparkContext
     timestamp = (datetime.now()).strftime("%Y-%m-%d")
 
 
+    
     country_data = generate_country()
-    rdd = sc.parallelize(country_data)
-    output_path = os.path.join(HDFS_OUTPUT_PATH,"countries", f"countries_{timestamp}")
-    hadoop = spark._jvm.org.apache.hadoop
-    fs = hadoop.fs.FileSystem.get(spark._jsc.hadoopConfiguration())
-    hdfs_path = hadoop.fs.Path(output_path)
-
-    if fs.exists(hdfs_path):
-        fs.delete(hdfs_path, True)
-    rdd.coalesce(1).saveAsTextFile(output_path)
-
-
+    save_to_hdfs(country_data, "countries", "countries", spark, timestamp)
+    
     product_data = generate_product()
-    rdd = sc.parallelize(product_data)
-    output_path = os.path.join(HDFS_OUTPUT_PATH,"products", f"products_{timestamp}")
-    hadoop = spark._jvm.org.apache.hadoop
-    fs = hadoop.fs.FileSystem.get(spark._jsc.hadoopConfiguration())
-    hdfs_path = hadoop.fs.Path(output_path)
-
-    if fs.exists(hdfs_path):
-        fs.delete(hdfs_path, True)
-    rdd.coalesce(1).saveAsTextFile(output_path)
+    save_to_hdfs(product_data, "products", "products", spark, timestamp)
 
 
     spark.stop()

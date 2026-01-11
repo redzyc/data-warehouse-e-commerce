@@ -1,11 +1,4 @@
-import sys
-import os
-import smtplib
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
-from pyspark.sql import SparkSession
-from pyspark.sql.functions import *
-from pyspark.sql.types import FloatType
+from common_imports import *
 
 SMTP_SERVER = os.getenv("SMTP_SERVER", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", 587))
@@ -15,13 +8,7 @@ RECEIVER_EMAIL = os.getenv("SMTP_RECEIVER_EMAIL")
 
 ENABLE_REAL_EMAIL = True
 
-def create_spark_session():
-    return SparkSession.builder \
-        .appName("Purple_Phase_Anomaly_Detection") \
-        .config("hive.metastore.uris", "thrift://hive-metastore:9083") \
-        .config("spark.driver.host", "spark-master") \
-        .enableHiveSupport() \
-        .getOrCreate()
+
 
 def send_alert_email(anomalies_data):
     if not anomalies_data:

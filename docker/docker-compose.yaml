@@ -104,6 +104,8 @@ services:
       - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
       - SPARK_SSL_ENABLED=no
       - HADOOP_CONF_DIR=/opt/hadoop/conf
+      - PYTHONPATH=/opt/spark/scripts:/opt/spark/jobs
+      - SPARK_SUBMIT_OPTS=-Dpython.path=/opt/spark/scripts:/opt/spark/jobs
       - SPARK_CONF_spark_network_timeout=120s
       - SPARK_CONF_spark_rpc_askTimeout=60s
       - SPARK_CONF_spark_worker_timeout=120
@@ -140,6 +142,8 @@ services:
       - SPARK_RPC_ENCRYPTION_ENABLED=no
       - SPARK_LOCAL_STORAGE_ENCRYPTION_ENABLED=no
       - SPARK_SSL_ENABLED=no
+      - PYTHONPATH=/opt/spark/scripts:/opt/spark/jobs
+      - SPARK_SUBMIT_OPTS=-Dpython.path=/opt/spark/scripts:/opt/spark/jobs
       - SPARK_CONF_spark_network_timeout=120s
       - SPARK_CONF_spark_rpc_askTimeout=60s
       - SPARK_CONF_spark_worker_timeout=120
@@ -187,11 +191,11 @@ services:
     depends_on:
       - hive-metastore-postgresql
     environment:
-      - SUPERSET_DATABASE_HOST=hive-metastore-postgresql
-      - SUPERSET_SECRET_KEY=tajni_kljuc112233
+      - SUPERSET_DATABASE_HOST=${SUPERSET_DATABASE_HOST}
+      - SUPERSET_SECRET_KEY=${SUPERSET_SECRET_KEY}
       - GUNICORN_KEEP_ALIVE=120
-      - SUPERSET_SQLALCHEMY_DATABASE_URI=postgresql+psycopg2://hive:hive@hive-metastore-postgresql:5432/superset
-      - SUPERSET_DATABASE_DB=superset
+      - SUPERSET_SQLALCHEMY_DATABASE_URI=postgresql+psycopg2://${DB_USERNAME}:${DB_PASSWORD}@${SUPERSET_DATABASE_HOST}:${DB_PORT}/${SUPERSET_DATABASE_DB}
+      - SUPERSET_DATABASE_DB=${SUPERSET_DATABASE_DB}
       - SUPERSET_CONFIG_PATH=/app/pythonpath/superset_config.py
       
     ports:
@@ -200,7 +204,7 @@ services:
       - ./superset/superset_config.py:/app/pythonpath/superset_config.py
     command: >
       sh -c "
-      superset fab create-admin --username admin --firstname Admin --lastname Adminovic --email admin@admin.com --password admin &&
+      superset fab create-admin --username ${SUPERSET_ADMIN_USER} --firstname ${SUPERSET_ADMIN_FIRSTNAME} --lastname ${SUPERSET_ADMIN_LASTNAME} --email ${SUPERSET_ADMIN_EMAIL} --password ${SUPERSET_ADMIN_PASSWORD} &&
       superset db upgrade &&
       superset init &&
       /usr/bin/run-server.sh"
